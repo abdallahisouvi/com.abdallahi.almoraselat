@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>الدردشة</title>
+
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+<style>
+body { margin:0; font-family:Arial; background:#ece5dd }
+#login { padding:20px; text-align:center }
+#app { display:none; height:100vh }
+
+#users {
+  width:30%;
+  background:#fff;
+  overflow-y:auto;
+  border-right:1px solid #ccc;
+}
+
+.user {
+  padding:10px;
+  cursor:pointer;
+  border-bottom:1px solid #eee;
+}
+
+.online { color:green }
+.offline { color:gray }
+
+#chat {
+  flex:1;
+  display:flex;
+  flex-direction:column;
+}
+
+#messages { flex:1; padding:10px; overflow-y:auto }
+
+.msg {
+  max-width:70%;
+  padding:8px;
+  margin:6px;
+  border-radius:10px;
+}
+
+.me { background:#dcf8c6; margin-left:auto }
+.other { background:#fff; margin-right:auto }
+
+#sendBox { display:flex; padding:8px; background:#f0f0f0 }
+#sendBox input { flex:1; padding:8px }
+</style>
+</head>
+
+<body>
+
+<div id="login">
+  <h3>اسم المستخدم</h3>
+  <input id="username">
+  <br><br>
+  <button onclick="login()">دخول</button>
+</div>
+
+<div id="app" style="display:flex">
+  <div id="users"></div>
+
+  <div id="chat">
+    <div id="messages"></div>
+    <div id="sendBox">
+      <input id="msgInput" placeholder="اكتب رسالة">
+      <button onclick="send()">إرسال</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// 🔥 Firebase
+firebase.initializeApp({
+  apiKey: "AIzaSyDTy_QhUXyrqx0U45YVMlB2-WXCfclNwH4",
+  databaseURL: "https://almoraselat-default-rtdb.firebaseio.com",
+  projectId: "almoraselat"
+});
+
+const auth = firebase.auth();
+const db = firebase.database();
+
+let me, myName, currentChat = null;
+
+// تسجيل
+function login() {
+  myName = username.value;
+  if (!myName) return alert("اكتب اسمك");
+
+  auth.signInAnonymously().then(r => {
+    me = r.user.uid;
+
+    db.ref("users/" + me).set({
+      name: myName,
+      online: true
+    });
+
+    db.ref("users/" + me + "/online")
+      .onDisconnect().set(false);
+
+    login.style.display="none";
+    app.style.display="flex";
+
+    loadUsers();
+  });
+}
+
+// قائمة المستخدمين + الحالة
+function loadUsers() {
+  db.ref("users").on("value", snap => {
+    users.innerHTML = "";
+    snap.forEach(s => {
+      if (s.key === me) return;
+
+      let u = s.val();
+      let div = document.createElement("div");
+      div.className = "user";
+      div.innerHTML =
+        u.name + 
+        ` <span class="${u.online?'online':'offline'}">
+        ${u.online?'●':'○'}</span>`;
+
+      div.onclick = () => openChat(s.key, u.name);
+      users.appendChild(div);
+    });
+  });
+}
+
+// فتح محادثة خاصة
+function openChat(uid, name) {
+  messages.innerHTML = "";
+  currentChat = me < uid ? me+"_"+uid : uid+"_"+me;
+
+  db.ref("chats/"+currentChat+"/messages")
+    .limitToLast(100)
+    .off();
+
+  db.ref("chats/"+currentChat+"/messages")
+    .limitToLast(100)
+    .on("child_added", s => {
+      let m = s.val();
+      let d = document.createElement("div");
+      d.className = "msg " + (m.sender===me?"me":"other");
+      d.innerHTML = `<b>${m.name}</b><br>${m.text}`;
+      messages.appendChild(d);
+      messages.scrollTop = messages.scrollHeight;
+
+      // إشعار داخل الصفحة
+      if (m.sender !== me) {
+        document.title = "رسالة جديدة 🔔";
+      }
+    });
+}
+
+// إرسال
+function send() {
+  if (!currentChat) return alert("اختر مستخدم");
+  let text = msgInput.value;
+  if (!text) return;
+
+  db.ref("chats/"+currentChat+"/messages").push({
+    sender: me,
+    name: myName,
+    text: text,
+    time: Date.now()
+  });
+
+  msgInput.value="";
+  document.title="الدردشة";
+}
+</script>
+
+</body>
+</html>
